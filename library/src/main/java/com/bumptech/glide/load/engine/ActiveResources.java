@@ -1,9 +1,9 @@
 package com.bumptech.glide.load.engine;
 
 import android.os.Process;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
-import android.support.annotation.VisibleForTesting;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.annotation.VisibleForTesting;
 import com.bumptech.glide.load.Key;
 import com.bumptech.glide.load.engine.EngineResource.ResourceListener;
 import com.bumptech.glide.util.Executors;
@@ -20,15 +20,13 @@ import java.util.concurrent.ThreadFactory;
 final class ActiveResources {
   private final boolean isActiveResourceRetentionAllowed;
   private final Executor monitorClearedResourcesExecutor;
-  @VisibleForTesting
-  final Map<Key, ResourceWeakReference> activeEngineResources = new HashMap<>();
+  @VisibleForTesting final Map<Key, ResourceWeakReference> activeEngineResources = new HashMap<>();
   private final ReferenceQueue<EngineResource<?>> resourceReferenceQueue = new ReferenceQueue<>();
 
   private ResourceListener listener;
 
   private volatile boolean isShutdown;
-  @Nullable
-  private volatile DequeuedResourceCallback cb;
+  @Nullable private volatile DequeuedResourceCallback cb;
 
   ActiveResources(boolean isActiveResourceRetentionAllowed) {
     this(
@@ -108,25 +106,23 @@ final class ActiveResources {
   @SuppressWarnings({"WeakerAccess", "SynchronizeOnNonFinalField"})
   @Synthetic
   void cleanupActiveReference(@NonNull ResourceWeakReference ref) {
-    // Fixes a deadlock where we normally acquire the Engine lock and then the ActiveResources lock
-    // but reverse that order in this one particular test. This is definitely a bit of a hack...
-    synchronized (listener) {
-      synchronized (this) {
-        activeEngineResources.remove(ref.key);
+    synchronized (this) {
+      activeEngineResources.remove(ref.key);
 
-        if (!ref.isCacheable || ref.resource == null) {
-          return;
-        }
-        EngineResource<?> newResource =
-            new EngineResource<>(ref.resource, /*isCacheable=*/ true, /*isRecyclable=*/ false);
-        newResource.setResourceListener(ref.key, listener);
-        listener.onResourceReleased(ref.key, newResource);
+      if (!ref.isCacheable || ref.resource == null) {
+        return;
       }
     }
+
+    EngineResource<?> newResource =
+        new EngineResource<>(
+            ref.resource, /*isMemoryCacheable=*/ true, /*isRecyclable=*/ false, ref.key, listener);
+    listener.onResourceReleased(ref.key, newResource);
   }
 
   @SuppressWarnings("WeakerAccess")
-  @Synthetic void cleanReferenceQueue() {
+  @Synthetic
+  void cleanReferenceQueue() {
     while (!isShutdown) {
       try {
         ResourceWeakReference ref = (ResourceWeakReference) resourceReferenceQueue.remove();
@@ -165,10 +161,18 @@ final class ActiveResources {
 
   @VisibleForTesting
   static final class ResourceWeakReference extends WeakReference<EngineResource<?>> {
-    @SuppressWarnings("WeakerAccess") @Synthetic final Key key;
-    @SuppressWarnings("WeakerAccess") @Synthetic final boolean isCacheable;
+    @SuppressWarnings("WeakerAccess")
+    @Synthetic
+    final Key key;
 
-    @Nullable @SuppressWarnings("WeakerAccess") @Synthetic Resource<?> resource;
+    @SuppressWarnings("WeakerAccess")
+    @Synthetic
+    final boolean isCacheable;
+
+    @Nullable
+    @SuppressWarnings("WeakerAccess")
+    @Synthetic
+    Resource<?> resource;
 
     @Synthetic
     @SuppressWarnings("WeakerAccess")
@@ -180,9 +184,10 @@ final class ActiveResources {
       super(referent, queue);
       this.key = Preconditions.checkNotNull(key);
       this.resource =
-          referent.isCacheable() && isActiveResourceRetentionAllowed
-              ? Preconditions.checkNotNull(referent.getResource()) : null;
-      isCacheable = referent.isCacheable();
+          referent.isMemoryCacheable() && isActiveResourceRetentionAllowed
+              ? Preconditions.checkNotNull(referent.getResource())
+              : null;
+      isCacheable = referent.isMemoryCacheable();
     }
 
     void reset() {

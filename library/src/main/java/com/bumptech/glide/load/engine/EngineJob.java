@@ -1,10 +1,12 @@
 package com.bumptech.glide.load.engine;
 
-import android.support.annotation.NonNull;
-import android.support.annotation.VisibleForTesting;
-import android.support.v4.util.Pools;
+import androidx.annotation.GuardedBy;
+import androidx.annotation.NonNull;
+import androidx.annotation.VisibleForTesting;
+import androidx.core.util.Pools;
 import com.bumptech.glide.load.DataSource;
 import com.bumptech.glide.load.Key;
+import com.bumptech.glide.load.engine.EngineResource.ResourceListener;
 import com.bumptech.glide.load.engine.executor.GlideExecutor;
 import com.bumptech.glide.request.ResourceCallback;
 import com.bumptech.glide.util.Executors;
@@ -22,8 +24,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * A class that manages a load by adding and removing callbacks for for the load and notifying
  * callbacks when the load completes.
  */
-class EngineJob<R> implements DecodeJob.Callback<R>,
-    Poolable {
+class EngineJob<R> implements DecodeJob.Callback<R>, Poolable {
   private static final EngineResourceFactory DEFAULT_FACTORY = new EngineResourceFactory();
 
   @SuppressWarnings("WeakerAccess")
@@ -31,9 +32,10 @@ class EngineJob<R> implements DecodeJob.Callback<R>,
   final ResourceCallbacksAndExecutors cbs = new ResourceCallbacksAndExecutors();
 
   private final StateVerifier stateVerifier = StateVerifier.newInstance();
+  private final ResourceListener resourceListener;
   private final Pools.Pool<EngineJob<?>> pool;
   private final EngineResourceFactory engineResourceFactory;
-  private final EngineJobListener listener;
+  private final EngineJobListener engineJobListener;
   private final GlideExecutor diskCacheExecutor;
   private final GlideExecutor sourceExecutor;
   private final GlideExecutor sourceUnlimitedExecutor;
@@ -73,14 +75,16 @@ class EngineJob<R> implements DecodeJob.Callback<R>,
       GlideExecutor sourceExecutor,
       GlideExecutor sourceUnlimitedExecutor,
       GlideExecutor animationExecutor,
-      EngineJobListener listener,
+      EngineJobListener engineJobListener,
+      ResourceListener resourceListener,
       Pools.Pool<EngineJob<?>> pool) {
     this(
         diskCacheExecutor,
         sourceExecutor,
         sourceUnlimitedExecutor,
         animationExecutor,
-        listener,
+        engineJobListener,
+        resourceListener,
         pool,
         DEFAULT_FACTORY);
   }
@@ -91,14 +95,16 @@ class EngineJob<R> implements DecodeJob.Callback<R>,
       GlideExecutor sourceExecutor,
       GlideExecutor sourceUnlimitedExecutor,
       GlideExecutor animationExecutor,
-      EngineJobListener listener,
+      EngineJobListener engineJobListener,
+      ResourceListener resourceListener,
       Pools.Pool<EngineJob<?>> pool,
       EngineResourceFactory engineResourceFactory) {
     this.diskCacheExecutor = diskCacheExecutor;
     this.sourceExecutor = sourceExecutor;
     this.sourceUnlimitedExecutor = sourceUnlimitedExecutor;
     this.animationExecutor = animationExecutor;
-    this.listener = listener;
+    this.engineJobListener = engineJobListener;
+    this.resourceListener = resourceListener;
     this.pool = pool;
     this.engineResourceFactory = engineResourceFactory;
   }
@@ -120,9 +126,8 @@ class EngineJob<R> implements DecodeJob.Callback<R>,
 
   public synchronized void start(DecodeJob<R> decodeJob) {
     this.decodeJob = decodeJob;
-    GlideExecutor executor = decodeJob.willDecodeFromCache()
-        ? diskCacheExecutor
-        : getActiveSourceExecutor();
+    GlideExecutor executor =
+        decodeJob.willDecodeFromCache() ? diskCacheExecutor : getActiveSourceExecutor();
     executor.execute(decodeJob);
   }
 
@@ -144,7 +149,8 @@ class EngineJob<R> implements DecodeJob.Callback<R>,
 
   @SuppressWarnings("WeakerAccess")
   @Synthetic
-  synchronized void callCallbackOnResourceReady(ResourceCallback cb) {
+  @GuardedBy("this")
+  void callCallbackOnResourceReady(ResourceCallback cb) {
     try {
       // This is overly broad, some Glide code is actually called here, but it's much
       // simpler to encapsulate here than to do so at the actual call point in the
@@ -157,7 +163,8 @@ class EngineJob<R> implements DecodeJob.Callback<R>,
 
   @SuppressWarnings("WeakerAccess")
   @Synthetic
-  synchronized void callCallbackOnLoadFailed(ResourceCallback cb) {
+  @GuardedBy("this")
+  void callCallbackOnLoadFailed(ResourceCallback cb) {
     // This is overly broad, some Glide code is actually called here, but it's much
     // simpler to encapsulate here than to do so at the actual call point in the Request
     // implementation.
@@ -186,7 +193,8 @@ class EngineJob<R> implements DecodeJob.Callback<R>,
 
   private GlideExecutor getActiveSourceExecutor() {
     return useUnlimitedSourceGeneratorPool
-        ? sourceUnlimitedExecutor : (useAnimationPool ? animationExecutor : sourceExecutor);
+        ? sourceUnlimitedExecutor
+        : (useAnimationPool ? animationExecutor : sourceExecutor);
   }
 
   // Exposed for testing.
@@ -197,7 +205,7 @@ class EngineJob<R> implements DecodeJob.Callback<R>,
 
     isCancelled = true;
     decodeJob.cancel();
-    listener.onEngineJobCancelled(this, key);
+    engineJobListener.onEngineJobCancelled(this, key);
   }
 
   // Exposed for testing.
@@ -211,8 +219,11 @@ class EngineJob<R> implements DecodeJob.Callback<R>,
 
   // We have to post Runnables in a loop. Typically there will be very few callbacks. AccessorMethod
   // seems to be a false positive
-  @SuppressWarnings(
-          {"WeakerAccess", "PMD.AvoidInstantiatingObjectsInLoops", "PMD.AccessorMethodGeneration"})
+  @SuppressWarnings({
+    "WeakerAccess",
+    "PMD.AvoidInstantiatingObjectsInLoops",
+    "PMD.AccessorMethodGeneration"
+  })
   @Synthetic
   void notifyCallbacksOfResult() {
     ResourceCallbacksAndExecutors copy;
@@ -231,7 +242,7 @@ class EngineJob<R> implements DecodeJob.Callback<R>,
       } else if (hasResource) {
         throw new IllegalStateException("Already have resource");
       }
-      engineResource = engineResourceFactory.build(resource, isCacheable);
+      engineResource = engineResourceFactory.build(resource, isCacheable, key, resourceListener);
       // Hold on to resource for duration of our callbacks below so we don't recycle it in the
       // middle of notifying if it synchronously released by one of the callbacks. Acquire it under
       // a lock here so that any newly added callback that executes before the next locked section
@@ -244,7 +255,7 @@ class EngineJob<R> implements DecodeJob.Callback<R>,
       localResource = engineResource;
     }
 
-    listener.onEngineJobComplete(this, localKey, localResource);
+    engineJobListener.onEngineJobComplete(this, localKey, localResource);
 
     for (final ResourceCallbackAndExecutor entry : copy) {
       entry.executor.execute(new CallResourceReady(entry.cb));
@@ -263,17 +274,22 @@ class EngineJob<R> implements DecodeJob.Callback<R>,
 
   @SuppressWarnings("WeakerAccess")
   @Synthetic
-  synchronized void decrementPendingCallbacks() {
-    stateVerifier.throwIfRecycled();
-    Preconditions.checkArgument(isDone(), "Not yet complete!");
-    int decremented = pendingCallbacks.decrementAndGet();
-    Preconditions.checkArgument(decremented >= 0, "Can't decrement below 0");
-    if (decremented == 0) {
-      if (engineResource != null) {
-        engineResource.release();
-      }
+  void decrementPendingCallbacks() {
+    EngineResource<?> toRelease = null;
+    synchronized (this) {
+      stateVerifier.throwIfRecycled();
+      Preconditions.checkArgument(isDone(), "Not yet complete!");
+      int decremented = pendingCallbacks.decrementAndGet();
+      Preconditions.checkArgument(decremented >= 0, "Can't decrement below 0");
+      if (decremented == 0) {
+        toRelease = engineResource;
 
-      release();
+        release();
+      }
+    }
+
+    if (toRelease != null) {
+      toRelease.release();
     }
   }
 
@@ -321,8 +337,11 @@ class EngineJob<R> implements DecodeJob.Callback<R>,
 
   // We have to post Runnables in a loop. Typically there will be very few callbacks. Acessor method
   // warning seems to be false positive.
-  @SuppressWarnings(
-          {"WeakerAccess", "PMD.AvoidInstantiatingObjectsInLoops", "PMD.AccessorMethodGeneration"})
+  @SuppressWarnings({
+    "WeakerAccess",
+    "PMD.AvoidInstantiatingObjectsInLoops",
+    "PMD.AccessorMethodGeneration"
+  })
   @Synthetic
   void notifyCallbacksOfException() {
     ResourceCallbacksAndExecutors copy;
@@ -347,7 +366,7 @@ class EngineJob<R> implements DecodeJob.Callback<R>,
       incrementPendingCallbacks(copy.size() + 1);
     }
 
-    listener.onEngineJobComplete(this, localKey, /*resource=*/ null);
+    engineJobListener.onEngineJobComplete(this, localKey, /*resource=*/ null);
 
     for (ResourceCallbackAndExecutor entry : copy) {
       entry.executor.execute(new CallLoadFailed(entry.cb));
@@ -371,12 +390,16 @@ class EngineJob<R> implements DecodeJob.Callback<R>,
 
     @Override
     public void run() {
-      synchronized (EngineJob.this) {
-        if (cbs.contains(cb)) {
-          callCallbackOnLoadFailed(cb);
-        }
+      // Make sure we always acquire the request lock, then the EngineJob lock to avoid deadlock
+      // (b/136032534).
+      synchronized (cb.getLock()) {
+        synchronized (EngineJob.this) {
+          if (cbs.contains(cb)) {
+            callCallbackOnLoadFailed(cb);
+          }
 
-        decrementPendingCallbacks();
+          decrementPendingCallbacks();
+        }
       }
     }
   }
@@ -391,14 +414,18 @@ class EngineJob<R> implements DecodeJob.Callback<R>,
 
     @Override
     public void run() {
-      synchronized (EngineJob.this) {
-        if (cbs.contains(cb)) {
-          // Acquire for this particular callback.
-          engineResource.acquire();
-          callCallbackOnResourceReady(cb);
-          removeCallback(cb);
+      // Make sure we always acquire the request lock, then the EngineJob lock to avoid deadlock
+      // (b/136032534).
+      synchronized (cb.getLock()) {
+        synchronized (EngineJob.this) {
+          if (cbs.contains(cb)) {
+            // Acquire for this particular callback.
+            engineResource.acquire();
+            callCallbackOnResourceReady(cb);
+            removeCallback(cb);
+          }
+          decrementPendingCallbacks();
         }
-        decrementPendingCallbacks();
       }
     }
   }
@@ -480,8 +507,10 @@ class EngineJob<R> implements DecodeJob.Callback<R>,
 
   @VisibleForTesting
   static class EngineResourceFactory {
-    public <R> EngineResource<R> build(Resource<R> resource, boolean isMemoryCacheable) {
-      return new EngineResource<>(resource, isMemoryCacheable, /*isRecyclable=*/ true);
+    public <R> EngineResource<R> build(
+        Resource<R> resource, boolean isMemoryCacheable, Key key, ResourceListener listener) {
+      return new EngineResource<>(
+          resource, isMemoryCacheable, /*isRecyclable=*/ true, key, listener);
     }
   }
 }

@@ -3,10 +3,6 @@ package com.bumptech.glide.request.target;
 import android.content.Context;
 import android.graphics.Point;
 import android.graphics.drawable.Drawable;
-import android.support.annotation.IdRes;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
-import android.support.annotation.VisibleForTesting;
 import android.util.Log;
 import android.view.Display;
 import android.view.View;
@@ -14,6 +10,10 @@ import android.view.View.OnAttachStateChangeListener;
 import android.view.ViewGroup.LayoutParams;
 import android.view.ViewTreeObserver;
 import android.view.WindowManager;
+import androidx.annotation.IdRes;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.annotation.VisibleForTesting;
 import com.bumptech.glide.R;
 import com.bumptech.glide.request.Request;
 import com.bumptech.glide.request.transition.Transition;
@@ -28,14 +28,13 @@ import java.util.List;
  * etc) into {@link View}s that provides default implementations for most methods and can determine
  * the size of views using a {@link android.view.ViewTreeObserver.OnDrawListener}.
  *
- * @param <T> The specific subclass of view wrapped by this target (e.g.
- *          {@link android.widget.ImageView})
+ * @param <T> The specific subclass of view wrapped by this target (e.g. {@link
+ *     android.widget.ImageView})
  * @param <Z> The resource type this target will receive (e.g. {@link android.graphics.Bitmap}).
  */
 public abstract class CustomViewTarget<T extends View, Z> implements Target<Z> {
   private static final String TAG = "CustomViewTarget";
-  @IdRes private static final int VIEW_TAG_ID =
-      R.id.glide_custom_view_target_tag;
+  @IdRes private static final int VIEW_TAG_ID = R.id.glide_custom_view_target_tag;
 
   private final SizeDeterminer sizeDeterminer;
 
@@ -43,7 +42,6 @@ public abstract class CustomViewTarget<T extends View, Z> implements Target<Z> {
   @Nullable private OnAttachStateChangeListener attachStateListener;
   private boolean isClearedByUs;
   private boolean isAttachStateListenerAdded;
-  @IdRes private int overrideTag;
 
   /** Constructor that defaults {@code waitForLayout} to {@code false}. */
   public CustomViewTarget(@NonNull T view) {
@@ -54,10 +52,9 @@ public abstract class CustomViewTarget<T extends View, Z> implements Target<Z> {
   /**
    * A required callback invoked when the resource is no longer valid and must be freed.
    *
-   * <p>You must ensure that any current Drawable received in
-   * {@link #onResourceReady(Object, Transition)} is no longer used before redrawing the container
-   * (usually a View) or changing its visibility. <b>Not doing so will result in crashes in your
-   * app.</b>
+   * <p>You must ensure that any current Drawable received in {@link #onResourceReady(Object,
+   * Transition)} is no longer used before redrawing the container (usually a View) or changing its
+   * visibility. <b>Not doing so will result in crashes in your app.</b>
    *
    * @param placeholder The placeholder drawable to optionally show, or null.
    */
@@ -139,17 +136,18 @@ public abstract class CustomViewTarget<T extends View, Z> implements Target<Z> {
     if (attachStateListener != null) {
       return this;
     }
-    attachStateListener = new OnAttachStateChangeListener() {
-      @Override
-      public void onViewAttachedToWindow(View v) {
-        resumeMyRequest();
-      }
+    attachStateListener =
+        new OnAttachStateChangeListener() {
+          @Override
+          public void onViewAttachedToWindow(View v) {
+            resumeMyRequest();
+          }
 
-      @Override
-      public void onViewDetachedFromWindow(View v) {
-        pauseMyRequest();
-      }
-    };
+          @Override
+          public void onViewDetachedFromWindow(View v) {
+            pauseMyRequest();
+          }
+        };
     maybeAddAttachStateListener();
     return this;
   }
@@ -163,14 +161,14 @@ public abstract class CustomViewTarget<T extends View, Z> implements Target<Z> {
    * the same view, for example one foreground and one background view.
    *
    * @param tagId The android resource id to use.
+   * @deprecated Using this method prevents clearing the target from working properly. Glide uses
+   *     its own internal tag id so this method should not be necessary. This method is currently a
+   *     no-op.
    */
   // Public API.
   @SuppressWarnings({"UnusedReturnValue", "WeakerAccess"})
+  @Deprecated
   public final CustomViewTarget<T, Z> useTagId(@IdRes int tagId) {
-    if (this.overrideTag != 0) {
-      throw new IllegalArgumentException("You cannot change the tag id once it has been set.");
-    }
-    this.overrideTag = tagId;
     return this;
   }
 
@@ -266,12 +264,12 @@ public abstract class CustomViewTarget<T extends View, Z> implements Target<Z> {
   }
 
   private void setTag(@Nullable Object tag) {
-    view.setTag(overrideTag == 0 ? VIEW_TAG_ID : overrideTag, tag);
+    view.setTag(VIEW_TAG_ID, tag);
   }
 
   @Nullable
   private Object getTag() {
-    return view.getTag(overrideTag == 0 ? VIEW_TAG_ID : overrideTag);
+    return view.getTag(VIEW_TAG_ID);
   }
 
   private void maybeAddAttachStateListener() {
@@ -296,9 +294,7 @@ public abstract class CustomViewTarget<T extends View, Z> implements Target<Z> {
   static final class SizeDeterminer {
     // Some negative sizes (Target.SIZE_ORIGINAL) are valid, 0 is never valid.
     private static final int PENDING_SIZE = 0;
-    @VisibleForTesting
-    @Nullable
-    static Integer maxDisplayLength;
+    @VisibleForTesting @Nullable static Integer maxDisplayLength;
     private final View view;
     private final List<SizeReadyCallback> cbs = new ArrayList<>();
     @Synthetic boolean waitForLayout;
@@ -452,12 +448,14 @@ public abstract class CustomViewTarget<T extends View, Z> implements Target<Z> {
       // layout to complete before using this fallback parameter (ConstraintLayout among others).
       if (!view.isLayoutRequested() && paramSize == LayoutParams.WRAP_CONTENT) {
         if (Log.isLoggable(TAG, Log.INFO)) {
-          Log.i(TAG, "Glide treats LayoutParams.WRAP_CONTENT as a request for an image the size of"
-              + " this device's screen dimensions. If you want to load the original image and are"
-              + " ok with the corresponding memory cost and OOMs (depending on the input size), use"
-              + " .override(Target.SIZE_ORIGINAL). Otherwise, use LayoutParams.MATCH_PARENT, set"
-              + " layout_width and layout_height to fixed dimension, or use .override() with fixed"
-              + " dimensions.");
+          Log.i(
+              TAG,
+              "Glide treats LayoutParams.WRAP_CONTENT as a request for an image the size of"
+                  + " this device's screen dimensions. If you want to load the original image and"
+                  + " are ok with the corresponding memory cost and OOMs (depending on the input"
+                  + " size), use .override(Target.SIZE_ORIGINAL). Otherwise, use"
+                  + " LayoutParams.MATCH_PARENT, set layout_width and layout_height to fixed"
+                  + " dimension, or use .override() with fixed dimensions.");
         }
         return getMaxDisplayLength(view.getContext());
       }

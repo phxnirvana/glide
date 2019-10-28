@@ -1,5 +1,5 @@
-import se.bjurr.violations.gradle.plugin.ViolationsTask
 import org.gradle.api.tasks.testing.logging.TestExceptionFormat
+import se.bjurr.violations.gradle.plugin.ViolationsTask
 
 buildscript {
     repositories {
@@ -19,6 +19,7 @@ buildscript {
             classpath "net.ltgt.gradle:gradle-errorprone-plugin:${ERROR_PRONE_PLUGIN_VERSION}"
         }
         classpath "se.bjurr.violations:violations-gradle-plugin:${VIOLATIONS_PLUGIN_VERSION}"
+        classpath "com.diffplug.spotless:spotless-plugin-gradle:3.23.0"
     }
 }
 
@@ -92,6 +93,23 @@ subprojects { project ->
         duplicatesStrategy = DuplicatesStrategy.FAIL
     }
 
+    def isDisallowedProject =
+            project.name in ["third_party", "gif_decoder", "gif_encoder", "disklrucache"]
+    if (!isDisallowedProject) {
+        apply plugin: "com.diffplug.gradle.spotless"
+
+        spotless {
+            java {
+                target fileTree('.') {
+                    include '**/*.java'
+                    exclude '**/resources/**'
+                    exclude '**/build/**'
+                }
+                googleJavaFormat()
+            }
+        }
+    }
+
     apply plugin: 'checkstyle'
 
     checkstyle {
@@ -154,6 +172,12 @@ subprojects { project ->
                 if(variant.buildType.name == 'release') {
                     variant.setIgnore(true)
                 }
+            }
+        }
+
+        if (project.plugins.hasPlugin('com.android.library')) {
+            android.libraryVariants.all {
+                it.generateBuildConfigProvider.configure { enabled = false }
             }
         }
     }

@@ -1,14 +1,12 @@
 package com.bumptech.glide.samples.flickr;
 
-import android.support.annotation.NonNull;
+import androidx.annotation.NonNull;
 import com.bumptech.glide.annotation.GlideExtension;
 import com.bumptech.glide.annotation.GlideOption;
 import com.bumptech.glide.request.BaseRequestOptions;
 import com.bumptech.glide.samples.flickr.api.Api;
 
-/**
- * Extension methods for the Flickr sample's generated API.
- */
+/** Extension methods for the Flickr sample's generated API. */
 // Required by Glide's annotation processor.
 @SuppressWarnings({"WeakerAccess", "unused"})
 @GlideExtension

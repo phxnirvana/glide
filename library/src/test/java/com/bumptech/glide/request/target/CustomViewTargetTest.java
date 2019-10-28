@@ -4,7 +4,7 @@ import static android.view.ViewGroup.LayoutParams;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
-import static org.mockito.Matchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Matchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
@@ -17,8 +17,6 @@ import android.app.Activity;
 import android.content.Context;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
 import android.view.Display;
 import android.view.View;
 import android.view.View.OnAttachStateChangeListener;
@@ -27,6 +25,8 @@ import android.view.ViewTreeObserver;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import com.bumptech.glide.request.Request;
 import com.bumptech.glide.request.transition.Transition;
 import com.bumptech.glide.util.Preconditions;
@@ -45,17 +45,19 @@ import org.robolectric.RuntimeEnvironment;
 import org.robolectric.Shadows;
 import org.robolectric.android.controller.ActivityController;
 import org.robolectric.annotation.Config;
+import org.robolectric.annotation.TextLayoutMode;
 import org.robolectric.util.ReflectionHelpers;
 
 /**
  * Test for {@link CustomViewTarget}.
  *
- * TODO: This should really be in the tests subproject, but that causes errors because the R class
- * referenced in {@link CustomViewTarget} can't be found. This should be fixable with some gradle
- * changes, but I've so far failed to figure out the right set of commands.
+ * <p>TODO: This should really be in the tests subproject, but that causes errors because the R
+ * class referenced in {@link CustomViewTarget} can't be found. This should be fixable with some
+ * gradle changes, but I've so far failed to figure out the right set of commands.
  */
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = 19, manifest = "build/intermediates/manifests/full/debug/AndroidManifest.xml")
+@TextLayoutMode(value = TextLayoutMode.Mode.LEGACY, issueId = "130378660")
 public class CustomViewTargetTest {
   private ActivityController<Activity> activity;
   private View view;
@@ -526,9 +528,7 @@ public class CustomViewTargetTest {
   public void clearOnDetach_moreThanOnce_registersObserverOnce() {
     activity.visible();
     attachStateTarget.setRequest(request);
-    attachStateTarget
-        .clearOnDetach()
-        .clearOnDetach();
+    attachStateTarget.clearOnDetach().clearOnDetach();
     parent.removeView(view);
 
     verify(request).clear();
@@ -537,10 +537,7 @@ public class CustomViewTargetTest {
   @Test
   public void clearOnDetach_onDetach_afterMultipleClearOnDetaches_removesListener() {
     activity.visible();
-    attachStateTarget
-        .clearOnDetach()
-        .clearOnDetach()
-        .clearOnDetach();
+    attachStateTarget.clearOnDetach().clearOnDetach().clearOnDetach();
     attachStateTarget.onLoadCleared(/*placeholder=*/ null);
     attachStateTarget.setRequest(request);
     parent.removeView(view);
@@ -587,7 +584,7 @@ public class CustomViewTargetTest {
   }
 
   @Test
-  public void clearOnDetach_afterLoadClearedAndRestarted_onAttach_beingsREquest() {
+  public void clearOnDetach_afterLoadClearedAndRestarted_onAttach_beginsRequest() {
     attachStateTarget.clearOnDetach();
     attachStateTarget.setRequest(request);
     when(request.isCleared()).thenReturn(true);

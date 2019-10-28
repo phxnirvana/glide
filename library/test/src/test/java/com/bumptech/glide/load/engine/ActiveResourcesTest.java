@@ -1,13 +1,14 @@
 package com.bumptech.glide.load.engine;
 
 import static com.google.common.truth.Truth.assertThat;
-import static org.mockito.Matchers.any;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Matchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
 
-import android.support.annotation.NonNull;
+import android.os.Looper;
+import androidx.annotation.NonNull;
 import com.bumptech.glide.load.Key;
 import com.bumptech.glide.load.engine.ActiveResources.DequeuedResourceCallback;
 import com.bumptech.glide.load.engine.ActiveResources.ResourceWeakReference;
@@ -26,8 +27,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 import org.robolectric.RobolectricTestRunner;
+import org.robolectric.Shadows;
 import org.robolectric.annotation.Config;
-import org.robolectric.shadows.ShadowLooper;
 
 @RunWith(RobolectricTestRunner.class)
 @Config(shadows = GlideShadowLooper.class)
@@ -60,16 +61,14 @@ public class ActiveResourcesTest {
 
   @Test
   public void get_withActiveKey_returnsResource() {
-    EngineResource<Object> expected =
-        new EngineResource<>(resource, /*isCacheable=*/ true, /*isRecyclable=*/ true);
+    EngineResource<Object> expected = newCacheableEngineResource();
     resources.activate(key, expected);
     assertThat(resources.get(key)).isEqualTo(expected);
   }
 
   @Test
   public void get_withDeactivatedKey_returnsNull() {
-    EngineResource<Object> engineResource =
-        new EngineResource<>(resource, /*isCacheable=*/ true, /*isRecyclable=*/ true);
+    EngineResource<Object> engineResource = newCacheableEngineResource();
     resources.activate(key, engineResource);
     resources.deactivate(key);
     assertThat(resources.get(key)).isNull();
@@ -82,8 +81,7 @@ public class ActiveResourcesTest {
 
   @Test
   public void get_withActiveAndClearedKey_returnsNull() {
-    EngineResource<Object> engineResource =
-        new EngineResource<>(resource, /*isCacheable=*/ true, /*isRecyclable=*/ true);
+    EngineResource<Object> engineResource = newCacheableEngineResource();
     resources.activate(key, engineResource);
     resources.activeEngineResources.get(key).clear();
     assertThat(resources.get(key)).isNull();
@@ -91,8 +89,7 @@ public class ActiveResourcesTest {
 
   @Test
   public void get_withActiveAndClearedKey_andCacheableResource_callsListenerWithWrappedResource() {
-    EngineResource<Object> engineResource =
-        new EngineResource<>(resource, /*isCacheable=*/ true, /*isRecyclable=*/ true);
+    EngineResource<Object> engineResource = newCacheableEngineResource();
     resources.activate(key, engineResource);
     resources.activeEngineResources.get(key).clear();
     resources.get(key);
@@ -106,8 +103,7 @@ public class ActiveResourcesTest {
 
   @Test
   public void get_withActiveAndClearedKey_andCacheableResource_callsListenerWithNotRecycleable() {
-    EngineResource<Object> engineResource =
-        new EngineResource<>(resource, /*isCacheable=*/ true, /*isRecyclable=*/ true);
+    EngineResource<Object> engineResource = newCacheableEngineResource();
     resources.activate(key, engineResource);
     resources.activeEngineResources.get(key).clear();
     resources.get(key);
@@ -122,8 +118,7 @@ public class ActiveResourcesTest {
 
   @Test
   public void get_withActiveAndClearedKey_andCacheableResource_callsListenerWithCacheable() {
-    EngineResource<Object> engineResource =
-        new EngineResource<>(resource, /*isCacheable=*/ true, /*isRecyclable=*/ true);
+    EngineResource<Object> engineResource = newCacheableEngineResource();
     resources.activate(key, engineResource);
     resources.activeEngineResources.get(key).clear();
     resources.get(key);
@@ -132,13 +127,12 @@ public class ActiveResourcesTest {
 
     verify(listener).onResourceReleased(eq(key), captor.capture());
 
-    assertThat(captor.getValue().isCacheable()).isTrue();
+    assertThat(captor.getValue().isMemoryCacheable()).isTrue();
   }
 
   @Test
   public void get_withActiveAndClearedKey_andNotCacheableResource_doesNotCallListener() {
-    EngineResource<Object> engineResource =
-        new EngineResource<>(resource, /*isCacheable=*/ false, /*isRecyclable=*/ true);
+    EngineResource<Object> engineResource = newNonCacheableEngineResource();
     resources.activate(key, engineResource);
     resources.activeEngineResources.get(key).clear();
     resources.get(key);
@@ -148,8 +142,7 @@ public class ActiveResourcesTest {
 
   @Test
   public void queueIdle_afterResourceRemovedFromActive_doesNotCallListener() {
-    EngineResource<Object> engineResource =
-        new EngineResource<>(resource, /*isCacheable=*/ true, /*isRecyclable=*/ true);
+    EngineResource<Object> engineResource = newCacheableEngineResource();
     resources.activate(key, engineResource);
 
     ResourceWeakReference weakRef = resources.activeEngineResources.get(key);
@@ -162,8 +155,7 @@ public class ActiveResourcesTest {
 
   @Test
   public void queueIdle_withCacheableResourceInActive_callListener() {
-    EngineResource<Object> engineResource =
-        new EngineResource<>(resource, /*isCacheable=*/ true, /*isRecyclable=*/ true);
+    EngineResource<Object> engineResource = newCacheableEngineResource();
     resources.activate(key, engineResource);
 
     ResourceWeakReference weakRef = resources.activeEngineResources.get(key);
@@ -175,7 +167,7 @@ public class ActiveResourcesTest {
 
     EngineResource<?> released = captor.getValue();
     assertThat(released.getResource()).isEqualTo(resource);
-    assertThat(released.isCacheable()).isTrue();
+    assertThat(released.isMemoryCacheable()).isTrue();
 
     released.recycle();
     verify(resource, never()).recycle();
@@ -183,8 +175,7 @@ public class ActiveResourcesTest {
 
   @Test
   public void queueIdle_withNotCacheableResourceInActive_doesNotCallListener() {
-    EngineResource<Object> engineResource =
-        new EngineResource<>(resource, /*isCacheable=*/ false, /*isRecyclable=*/ true);
+    EngineResource<Object> engineResource = newNonCacheableEngineResource();
     resources.activate(key, engineResource);
 
     ResourceWeakReference weakRef = resources.activeEngineResources.get(key);
@@ -196,8 +187,7 @@ public class ActiveResourcesTest {
 
   @Test
   public void queueIdle_withCacheableResourceInActive_removesResourceFromActive() {
-    EngineResource<Object> engineResource =
-        new EngineResource<>(resource, /*isCacheable=*/ true, /*isRecyclable=*/ true);
+    EngineResource<Object> engineResource = newCacheableEngineResource();
     resources.activate(key, engineResource);
 
     ResourceWeakReference weakRef = resources.activeEngineResources.get(key);
@@ -208,8 +198,7 @@ public class ActiveResourcesTest {
 
   @Test
   public void queueIdle_withNotCacheableResourceInActive_removesResourceFromActive() {
-    EngineResource<Object> engineResource =
-        new EngineResource<>(resource, /*isCacheable=*/ false, /*isRecyclable=*/ true);
+    EngineResource<Object> engineResource = newNonCacheableEngineResource();
     resources.activate(key, engineResource);
 
     ResourceWeakReference weakRef = resources.activeEngineResources.get(key);
@@ -219,33 +208,8 @@ public class ActiveResourcesTest {
   }
 
   @Test
-  public void get_withQueuedReference_returnsResource() {
-    EngineResource<Object> engineResource =
-        new EngineResource<>(resource, /*isCacheable=*/ true, /*isRecyclable=*/ true);
-    resources.activate(key, engineResource);
-
-    ResourceWeakReference weakRef = resources.activeEngineResources.get(key);
-    weakRef.enqueue();
-
-    assertThat(resources.get(key)).isEqualTo(engineResource);
-  }
-
-  @Test
-  public void get_withQueuedReference_doesNotNotifyListener() {
-    EngineResource<Object> engineResource =
-        new EngineResource<>(resource, /*isCacheable=*/ true, /*isRecyclable=*/ true);
-    resources.activate(key, engineResource);
-
-    ResourceWeakReference weakRef = resources.activeEngineResources.get(key);
-    weakRef.enqueue();
-
-    verify(listener, never()).onResourceReleased(any(Key.class), any(EngineResource.class));
-  }
-
-  @Test
   public void queueIdle_withQueuedReferenceRetrievedFromGet_notifiesListener() {
-    EngineResource<Object> engineResource =
-        new EngineResource<>(resource, /*isCacheable=*/ true, /*isRecyclable=*/ true);
+    EngineResource<Object> engineResource = newCacheableEngineResource();
     resources.activate(key, engineResource);
 
     ResourceWeakReference weakRef = resources.activeEngineResources.get(key);
@@ -261,8 +225,7 @@ public class ActiveResourcesTest {
 
   @Test
   public void queueIdle_withQueuedReferenceRetrievedFromGetAndNotCacheable_doesNotNotifyListener() {
-    EngineResource<Object> engineResource =
-        new EngineResource<>(resource, /*isCacheable=*/ false, /*isRecyclable=*/ true);
+    EngineResource<Object> engineResource = newNonCacheableEngineResource();
     resources.activate(key, engineResource);
 
     ResourceWeakReference weakRef = resources.activeEngineResources.get(key);
@@ -303,8 +266,7 @@ public class ActiveResourcesTest {
               });
       resources.setListener(listener);
 
-      EngineResource<Object> engineResource =
-          new EngineResource<>(resource, /*isCacheable=*/ true, /*isRecyclable=*/ true);
+      EngineResource<Object> engineResource = newCacheableEngineResource();
       resources.activate(key, engineResource);
 
       ResourceWeakReference weakRef = resources.activeEngineResources.get(key);
@@ -349,16 +311,14 @@ public class ActiveResourcesTest {
               });
       resources.setListener(listener);
 
-      EngineResource<Object> first =
-          new EngineResource<>(resource, /*isCacheable=*/ true, /*isRecyclable=*/ true);
+      EngineResource<Object> first = newCacheableEngineResource();
       resources.activate(key, first);
 
       ResourceWeakReference weakRef = resources.activeEngineResources.get(key);
       CountDownLatch latch = getLatchForClearedRef();
       weakRef.enqueue();
 
-      EngineResource<Object> second =
-          new EngineResource<>(resource, /*isCacheable=*/ true, /*isRecyclable=*/ true);
+      EngineResource<Object> second = newCacheableEngineResource();
       resources.activate(key, second);
       blockExecutor.countDown();
 
@@ -373,8 +333,7 @@ public class ActiveResourcesTest {
 
   @Test
   public void activate_withNonCacheableResource_doesNotSaveResource() {
-    EngineResource<Object> engineResource =
-        new EngineResource<>(resource, /*isCacheable=*/ false, /*isRecyclable=*/ true);
+    EngineResource<Object> engineResource = newNonCacheableEngineResource();
     resources.activate(key, engineResource);
 
     assertThat(resources.activeEngineResources.get(key).resource).isNull();
@@ -384,8 +343,7 @@ public class ActiveResourcesTest {
   public void get_withActiveClearedKey_cacheableResource_retentionDisabled_doesNotCallListener() {
     resources = new ActiveResources(/*isActiveResourceRetentionAllowed=*/ false);
     resources.setListener(listener);
-    EngineResource<Object> engineResource =
-        new EngineResource<>(resource, /*isCacheable=*/ true, /*isRecyclable=*/ true);
+    EngineResource<Object> engineResource = newCacheableEngineResource();
     resources.activate(key, engineResource);
     resources.activeEngineResources.get(key).clear();
     resources.get(key);
@@ -394,25 +352,10 @@ public class ActiveResourcesTest {
   }
 
   @Test
-  public void get_withQueuedReference_retentionDisabled_returnsResource() {
-    resources = new ActiveResources(/*isActiveResourceRetentionAllowed=*/ false);
-    resources.setListener(listener);
-    EngineResource<Object> engineResource =
-        new EngineResource<>(resource, /*isCacheable=*/ true, /*isRecyclable=*/ true);
-    resources.activate(key, engineResource);
-
-    ResourceWeakReference weakRef = resources.activeEngineResources.get(key);
-    weakRef.enqueue();
-
-    assertThat(resources.get(key)).isEqualTo(engineResource);
-  }
-
-  @Test
   public void queueIdle_withQueuedReferenceRetrievedFromGet_retentionDisabled_doesNotNotify() {
     resources = new ActiveResources(/*isActiveResourceRetentionAllowed=*/ false);
     resources.setListener(listener);
-    EngineResource<Object> engineResource =
-        new EngineResource<>(resource, /*isCacheable=*/ true, /*isRecyclable=*/ true);
+    EngineResource<Object> engineResource = newCacheableEngineResource();
     resources.activate(key, engineResource);
 
     ResourceWeakReference weakRef = resources.activeEngineResources.get(key);
@@ -433,28 +376,39 @@ public class ActiveResourcesTest {
   }
 
   private void waitForLatch(CountDownLatch latch) {
-     try {
+    try {
       latch.await(10, TimeUnit.SECONDS);
     } catch (InterruptedException e) {
       throw new RuntimeException(e);
     }
-    ShadowLooper.getShadowMainLooper().runToEndOfTasks();
+    Shadows.shadowOf(Looper.getMainLooper()).runToEndOfTasks();
   }
 
   private CountDownLatch getLatchForClearedRef() {
     final CountDownLatch toWait = new CountDownLatch(1);
-    resources.setDequeuedResourceCallback(new DequeuedResourceCallback() {
-      @Override
-      public void onResourceDequeued() {
-        toWait.countDown();
-      }
-    });
+    resources.setDequeuedResourceCallback(
+        new DequeuedResourceCallback() {
+          @Override
+          public void onResourceDequeued() {
+            toWait.countDown();
+          }
+        });
     return toWait;
+  }
+
+  private EngineResource<Object> newCacheableEngineResource() {
+    return new EngineResource<>(
+        resource, /*isMemoryCacheable=*/ true, /*isRecyclable=*/ false, key, listener);
+  }
+
+  private EngineResource<Object> newNonCacheableEngineResource() {
+    return new EngineResource<>(
+        resource, /*isMemoryCacheable=*/ false, /*isRecyclable=*/ false, key, listener);
   }
 
   @SuppressWarnings("unchecked")
   private static ArgumentCaptor<EngineResource<?>> getEngineResourceCaptor() {
-    return (ArgumentCaptor<EngineResource<?>>) (ArgumentCaptor<?>)
-        ArgumentCaptor.forClass(EngineResource.class);
+    return (ArgumentCaptor<EngineResource<?>>)
+        (ArgumentCaptor<?>) ArgumentCaptor.forClass(EngineResource.class);
   }
 }

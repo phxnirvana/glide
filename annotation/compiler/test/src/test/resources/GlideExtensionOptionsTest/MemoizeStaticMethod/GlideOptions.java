@@ -3,12 +3,12 @@ package com.bumptech.glide.test;
 import android.content.res.Resources;
 import android.graphics.Bitmap;
 import android.graphics.drawable.Drawable;
-import android.support.annotation.CheckResult;
-import android.support.annotation.DrawableRes;
-import android.support.annotation.FloatRange;
-import android.support.annotation.IntRange;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
+import androidx.annotation.CheckResult;
+import androidx.annotation.DrawableRes;
+import androidx.annotation.FloatRange;
+import androidx.annotation.IntRange;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import com.bumptech.glide.Priority;
 import com.bumptech.glide.load.DecodeFormat;
 import com.bumptech.glide.load.Key;
@@ -18,12 +18,6 @@ import com.bumptech.glide.load.engine.DiskCacheStrategy;
 import com.bumptech.glide.load.resource.bitmap.DownsampleStrategy;
 import com.bumptech.glide.request.BaseRequestOptions;
 import com.bumptech.glide.request.RequestOptions;
-import java.lang.Class;
-import java.lang.Cloneable;
-import java.lang.Deprecated;
-import java.lang.Override;
-import java.lang.SafeVarargs;
-import java.lang.SuppressWarnings;
 
 /**
  * Automatically generated from {@link com.bumptech.glide.annotation.GlideExtension} annotated classes.
@@ -124,9 +118,8 @@ public final class GlideOptions extends RequestOptions implements Cloneable {
    */
   @CheckResult
   @NonNull
-  public static GlideOptions overrideOf(@IntRange(from = 0) int value0,
-      @IntRange(from = 0) int value1) {
-    return new GlideOptions().override(value0, value1);
+  public static GlideOptions overrideOf(int width, int height) {
+    return new GlideOptions().override(width, height);
   }
 
   /**
@@ -134,8 +127,8 @@ public final class GlideOptions extends RequestOptions implements Cloneable {
    */
   @CheckResult
   @NonNull
-  public static GlideOptions overrideOf(@IntRange(from = 0) int value) {
-    return new GlideOptions().override(value);
+  public static GlideOptions overrideOf(int size) {
+    return new GlideOptions().override(size);
   }
 
   /**
